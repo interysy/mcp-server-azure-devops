@@ -87,6 +87,10 @@ export async function getWikis(
 
     wikisWithContent = await Promise.all(
       wikisWithContent.map(async (wiki) => {
+        if (!wiki.name || !projectId) {
+          return wiki;
+        }
+
         if (wiki.name && wiki.mappedPath && projectId) {
           try {
             const pageContent = JSON.parse(
@@ -94,41 +98,14 @@ export async function getWikis(
                 .content,
             );
 
-            const subPages = pageContent['subPages'];
-
             wiki.pageContent = pageContent;
 
-            // let subPagesWithContent: any[] = [];
-
-            // subPagesWithContent = await Promise.all(
-            //   subPages.map(async (subPage: any) => {
-            //     if (subPage.path && wiki.name) {
-            //       let subPageContent = (
-            //         await client.getPage(projectId, wiki.name, subPage.path)
-            //       ).content;
-
-            //       return { ...subPage, content: subPageContent };
-            //     }
-            //   }),
-            // );
-
-            wiki.pageContent['subPagesWithContent'] =
-              await getAllSubPagesContent(
-                client,
-                projectId,
-                wiki.name,
-                subPages,
-              );
-
-            // subPages.forEach(async (subPage: any) => {
-            //   if (subPage.path && wiki.name) {
-            //     let subPageContent = (
-            //       await client.getPage(projectId, wiki.name, subPage.path)
-            //     ).content;
-
-            //     wiki.subPagesWithContent.push(subPageContent);
-            //   }
-            // });
+            wiki.pageContent['subPages'] = await getAllSubPagesContent(
+              client,
+              projectId,
+              wiki.name,
+              wiki.pageContent['subPages'],
+            );
           } catch (error) {
             console.error(error);
           }
