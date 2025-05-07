@@ -210,6 +210,8 @@ export class WikiClient {
     const params: Record<string, string> = {
       'api-version': '7.1',
       path: normalizedPath,
+      includeContent: 'True',
+      recursionLevel: 'full',
     };
 
     try {

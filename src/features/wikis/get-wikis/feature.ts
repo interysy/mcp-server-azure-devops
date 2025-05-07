@@ -4,7 +4,45 @@ import {
   AzureDevOpsError,
   AzureDevOpsResourceNotFoundError,
 } from '../../../shared/errors';
+import * as azureDevOpsClient from '../../../clients/azure-devops';
+import { WikiClient } from '../../../clients/azure-devops';
 
+type WikiWithContent = WikiV2 & {
+  pageContent: any;
+  subPagesWithContent: any[];
+};
+
+async function getAllSubPagesContent(
+  client: WikiClient,
+  projectId: string,
+  wikiName: string,
+  pages: any[],
+) {
+  let subPagesWithContent: any[] = [];
+
+  subPagesWithContent = await Promise.all(
+    pages.map(async (page: any) => {
+      if (page.path && wikiName) {
+        const pageContent = (
+          await client.getPage(projectId, wikiName, page.path)
+        ).content;
+
+        if (page.subPages) {
+          page.subPages = await getAllSubPagesContent(
+            client,
+            projectId,
+            wikiName,
+            page.subPages,
+          );
+        }
+
+        return { ...page, content: pageContent };
+      }
+    }),
+  );
+
+  return subPagesWithContent;
+}
 /**
  * Options for getting wikis
  */
@@ -32,18 +70,74 @@ export interface GetWikisOptions {
 export async function getWikis(
   connection: WebApi,
   options: GetWikisOptions,
-): Promise<WikiV2[]> {
+): Promise<WikiWithContent[]> {
   try {
     // Get the Wiki API client
     const wikiApi = await connection.getWikiApi();
-
     // If a projectId is provided, get wikis for that specific project
     // Otherwise, get wikis for the entire organization
-    const { projectId } = options;
+    const { projectId, organizationId } = options;
+
+    const client = await azureDevOpsClient.getWikiClient({
+      organizationId,
+    });
 
     const wikis = await wikiApi.getAllWikis(projectId);
+    let wikisWithContent: WikiWithContent[] = wikis as WikiWithContent[];
 
-    return wikis || [];
+    wikisWithContent = await Promise.all(
+      wikisWithContent.map(async (wiki) => {
+        if (wiki.name && wiki.mappedPath && projectId) {
+          try {
+            const pageContent = JSON.parse(
+              (await client.getPage(projectId, wiki.name, wiki.mappedPath))
+                .content,
+            );
+
+            const subPages = pageContent['subPages'];
+
+            wiki.pageContent = pageContent;
+
+            // let subPagesWithContent: any[] = [];
+
+            // subPagesWithContent = await Promise.all(
+            //   subPages.map(async (subPage: any) => {
+            //     if (subPage.path && wiki.name) {
+            //       let subPageContent = (
+            //         await client.getPage(projectId, wiki.name, subPage.path)
+            //       ).content;
+
+            //       return { ...subPage, content: subPageContent };
+            //     }
+            //   }),
+            // );
+
+            wiki.pageContent['subPagesWithContent'] =
+              await getAllSubPagesContent(
+                client,
+                projectId,
+                wiki.name,
+                subPages,
+              );
+
+            // subPages.forEach(async (subPage: any) => {
+            //   if (subPage.path && wiki.name) {
+            //     let subPageContent = (
+            //       await client.getPage(projectId, wiki.name, subPage.path)
+            //     ).content;
+
+            //     wiki.subPagesWithContent.push(subPageContent);
+            //   }
+            // });
+          } catch (error) {
+            console.error(error);
+          }
+        }
+        return wiki;
+      }),
+    );
+
+    return wikisWithContent;
   } catch (error) {
     // Handle resource not found errors specifically
     if (
